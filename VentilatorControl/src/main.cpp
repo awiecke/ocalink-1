@@ -19,11 +19,6 @@
 
 #define DEFAULT_BAUD_RATE 256000
 
-#define BLOWER_DRIVER_MIN_PULSE_MICROSECONDS (double)1000
-#define BLOWER_DRIVER_MAX_PULSE_MICROSECONDS (double)2000
-#define BLOWER_DRIVER_PULSE_STARTUP_WIGGLE   (double)100
-#define DEFAULT_ESC_INIT_TIME 3000
-
 #define PINCH_VALVE_DRIVER_FULL_OPEN_PULSE_MICROSECONDS (double)1450
 #define PINCH_VALVE_DRIVER_FULL_CLOSE_PULSE_MICROSECONDS (double)1725
 
@@ -31,7 +26,7 @@
 #define MAX_PERCENTAGE (double)100
 
 #define BUZZER_PIN 2
-#define PINCH_VALVE_PIN 3
+#define PINCH_VALVE_PIN 4
 // #define SOLENOID_PIN 4
 #define BLOWER_PIN 5
 
@@ -72,7 +67,7 @@ typedef enum{
 }BreathCycleStep;
 BreathCycleStep CurrCycleStep;
 
-Servo blower;
+//Servo blower;
 Servo pinch_valve;
 
 AllSensors_DLHR_L60D_8 gagePressure(&Wire);
@@ -111,7 +106,7 @@ uint32_t ControlLoopStartTimeMilliseconds; // Time, in terms of millis(), the st
 uint32_t ControlLoopInitialStabilizationTimeMilliseconds = DEFAULT_CONTROL_LOOP_INIT_STABILIZATION; // Length of time after transitioning out of IDLE that the system waits before transitioning to INHALE_RAMP
 uint32_t InhaleRampDurationMilliseconds = DEFAULT_INHALE_RAMP; // Length of the INHALE_RAMP period for a breath cycle. AKA Value of CurrTimeInCycleMilliseconds when the state changes to INHALE_HOLD .User configurable
 uint32_t InhaleDurationMilliseconds = DEFAULT_INHALE_DURATION; // Combined length of the INHALE_RAMP and INHALE_HOLD periods. AKA Value of CurrTimeInCycleMilliseconds when the state changes to EXHALE_HOLD. User configurable.
-uint32_t ExhaleDurationMilliseconds = DEFAULT_EXHALE_DURATION; // Combined length of the EXHALE_RAMP and EXHALE_HOLD periods. AKA Value of CurrTimeInCycleMilliseconds when the state changes to INHALE_HOLD. User configurable.
+uint32_t ExhaleDurationMilliseconds = 1500; // Combined length of the EXHALE_RAMP and EXHALE_HOLD periods. AKA Value of CurrTimeInCycleMilliseconds when the state changes to INHALE_HOLD. User configurable.
 uint32_t BreathCycleDurationMilliseconds = InhaleDurationMilliseconds + ExhaleDurationMilliseconds; // Total length of breath cycle, AKA when cycle step resets to INHALE_RAMP and CurrTimeInCycleMilliseconds resets to 0
 
 uint32_t TimeOfLastSolenoidToggleMilliseconds = 0; // Time, in terms of millis(), that the solenoid last changed states
@@ -123,8 +118,8 @@ uint32_t TimeOfLastSolenoidToggleMilliseconds = 0; // Time, in terms of millis()
 // TODO: MEDIUM reorganize constants
 // Pressure Controlled Blower PID
 double pressure_system_input, blower_output_speed_in_percentage, pinch_valve_output_openness_in_percentage, CurrPressureSetpointCentimetersH2O;
-//double Blower_Kp = DEFAULT_KP, Blower_Ki = DEFAULT_KI, Blower_Kd = DEFAULT_KD;
-double Blower_Kp=10.010000, Blower_Ki=0, Blower_Kd=0.008000;
+// double Blower_Kp = DEFAULT_KP, Blower_Ki = DEFAULT_KI, Blower_Kd = DEFAULT_KD;
+double Blower_Kp=0, Blower_Ki=0, Blower_Kd=0.008000;
 double PinchValve_Kp = 5, PinchValve_Ki = 0, PinchValve_Kd = 1;
 PID Blower_PID(&pressure_system_input,
                 &blower_output_speed_in_percentage,
@@ -148,24 +143,6 @@ void breath_cycle_timer_reset(bool hardreset = false)
   {
     ControlLoopStartTimeMilliseconds = CycleStartTimeFromSysClockMilliseconds;
   }
-}
-
-void blower_esc_init (void)
-{
-  pinMode(BLOWER_PIN, OUTPUT);
-  digitalWrite(BLOWER_PIN, LOW);
-  blower.attach(BLOWER_PIN);
-  // Hold throttle LOW for ESC to initialize properly
-
-  blower.writeMicroseconds(BLOWER_DRIVER_MIN_PULSE_MICROSECONDS);
-
-  delay(DEFAULT_ESC_INIT_TIME*0.90);
-
-  blower.writeMicroseconds((BLOWER_DRIVER_MIN_PULSE_MICROSECONDS+BLOWER_DRIVER_MAX_PULSE_MICROSECONDS)/2);
-
-  delay(DEFAULT_ESC_INIT_TIME*0.10);
-
-  blower.writeMicroseconds(BLOWER_DRIVER_MIN_PULSE_MICROSECONDS);
 }
 
 void pinch_valve_init (void)
@@ -342,7 +319,7 @@ void print_pid_setpoint_and_current_value(void)
         break;
       }
       Serial.print(" ");
-      Serial.print(blower_output_speed_in_percentage);
+      Serial.print(getCurrentBlowerSpeed());
       Serial.println();
 
     }
@@ -351,38 +328,34 @@ void print_pid_setpoint_and_current_value(void)
 
 void reset_blower_pid_integrator(void)
 {
-  Blower_PID.SetMode(MANUAL);
-  blower_output_speed_in_percentage = 0;
-  Blower_PID.SetMode(AUTOMATIC);
+  // Blower_PID.SetMode(MANUAL);
+  // blower_output_speed_in_percentage = 0;
+  // Blower_PID.SetMode(AUTOMATIC);
 }
 
 void write_calculated_pid_blower_speed(void)
 {
 
-  switch( CurrCycleStep)
-  {
-    case INHALE_RAMP:
-    case INHALE_HOLD:
-    case EXHALE_HOLD:
-      // static float BlowerSpeedExhaleWeightedAverage = -1;
-      // Set Blower_Kp, Blower_Ki, Blower_Kd and comute Pressure PID
-      Blower_PID.SetTunings(Blower_Kp, Blower_Ki, Blower_Kd);
-      Blower_PID.Compute();
+
+//   switch( CurrCycleStep)
+//   {
+//     case INHALE_RAMP:
+//     case INHALE_HOLD:
+//     case EXHALE_HOLD:
+//       // static float BlowerSpeedExhaleWeightedAverage = -1;
+//       // Set Blower_Kp, Blower_Ki, Blower_Kd and comute Pressure PID
+//       Blower_PID.SetTunings(Blower_Kp, Blower_Ki, Blower_Kd);
+//       Blower_PID.Compute();
       
-    break;
-    case IDLE:
-    case EXHALE_RAMP:
-      reset_blower_pid_integrator();
-      blower_output_speed_in_percentage = 0;
-    break;
-  }
-      // Output PID calcuslated 0-100% to motor
-      blower_speed = map(blower_output_speed_in_percentage,
-                        MIN_PERCENTAGE,
-                        MAX_PERCENTAGE,
-                        BLOWER_DRIVER_MIN_PULSE_MICROSECONDS,
-                        BLOWER_DRIVER_MAX_PULSE_MICROSECONDS);
-      blower.writeMicroseconds(blower_speed);
+//     break;
+//     case IDLE:
+//     case EXHALE_RAMP:
+//       reset_blower_pid_integrator();
+//       blower_output_speed_in_percentage = 0;
+//     break;
+//   }
+//       // Output PID calcuslated 0-100% to motor
+//       blower.writeMicroseconds(blower_speed);
 }
 
 // Write percent openness to the pinch valve
@@ -490,29 +463,20 @@ void cycle_state_setpoint_handler(void)
   switch(CurrCycleStep)
   {
     case INHALE_RAMP:
-      Blower_Kp=mapf(PipPressureCentimetersH2O, 15, 45, 240, 1000);
-      Blower_Ki=0;
-      Blower_Kd = mapf(PipPressureCentimetersH2O, 15, 45, .3, 24);
-      //CurrPressureSetpointCentimetersH2O = PipPressureCentimetersH2O*mapf(PipPressureCentimetersH2O, 25, 45, 1.30, 1);
       CurrPressureSetpointCentimetersH2O = (((float)CurrTimeInCycleMilliseconds/(float)InhaleRampDurationMilliseconds)*(PipPressureCentimetersH2O-PeepPressureCentimetersH2O))+PeepPressureCentimetersH2O;
     break;
     case INHALE_HOLD:
-      Blower_Kp = mapf(PipPressureCentimetersH2O, 15, 45, 2, 48);
-      Blower_Ki = mapf(PipPressureCentimetersH2O, 15, 45, 0, 0);
-      Blower_Kd= 1.25;
       CurrPressureSetpointCentimetersH2O = PipPressureCentimetersH2O;
     break;
     case EXHALE_RAMP:
-      Blower_Kp=10, Blower_Ki=0, Blower_Kd=0.3;
     case EXHALE_HOLD:
     case IDLE:
-      Blower_Kp=10, Blower_Ki=0, Blower_Kd=0.5;
     default:
       CurrPressureSetpointCentimetersH2O = PeepPressureCentimetersH2O;
     break;
   }
 
-  CurrPressureSetpointCentimetersH2O = linear_remap_setpoint_compensation(CurrPressureSetpointCentimetersH2O);
+  blowerTargetSpeedPercent = blowerPressureToBlowerSpeed(CurrPressureSetpointCentimetersH2O);
 }
 
 void buzzer_toggle(void)
@@ -580,7 +544,7 @@ void setup()
   // buzzer_init();
 
   // Initializations
-  blower_esc_init();
+  initBlower();
   pinch_valve_init();
   pressure_sensors_init();
   pid_init();
@@ -610,7 +574,9 @@ void loop()
 
   pinch_valve_control();
 
-  write_calculated_pid_blower_speed();
+  //write_calculated_pid_blower_speed();
+
+  recompute_blower_control_loop();
 
   print_pid_setpoint_and_current_value();
 
