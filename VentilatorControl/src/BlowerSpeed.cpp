@@ -4,10 +4,10 @@
 #include "helpers.h"
 #include <math.h>
 
-#define BLOWER_KP 0.0
-#define BLOWER_KI 3.0
+#define BLOWER_KP 1.2
+#define BLOWER_KI 2.0
 #define BLOWER_KD 0.0
-#define BLOWER_MAX_SPEED_FREQUENCY_HERTZ 1000.0 
+#define BLOWER_MAX_SPEED_FREQUENCY_HERTZ 2300.0 
 #define MICROSECONDS_TO_SECONDS 1000000.0
 
 unsigned long averageBlowerPulsePeriod;
@@ -17,10 +17,19 @@ volatile unsigned long lastBlowerPulseMicroseconds;
 
 // All percentages go from 0.0-100.0
 double blowerCurrentSpeedPercent;
+double blowerAverageSpeedPercent;
 double blowerPWMCommandPercent;
 double blowerTargetSpeedPercent;
 
-PID blowerPIDLoop = PID(&blowerCurrentSpeedPercent, &blowerPWMCommandPercent, &blowerTargetSpeedPercent, BLOWER_KP, BLOWER_KI, BLOWER_KD,DIRECT);
+#define NUM_SPEED_SAMPLES 10
+uint8_t blowerSampleIndex = 0;
+double blowerSpeedSamples[NUM_SPEED_SAMPLES];
+
+double blowerKp = BLOWER_KP;
+double blowerKi = BLOWER_KI;
+double blowerKd = BLOWER_KD;
+
+PID blowerPIDLoop = PID(&blowerAverageSpeedPercent, &blowerPWMCommandPercent, &blowerTargetSpeedPercent, blowerKp, blowerKi, blowerKd,DIRECT);
 
 void setupTimers();
 void setBlowerPWMPercent(double speedPercent);
@@ -28,14 +37,19 @@ void onBlowerSpeedRisingEdge();
 
 void initBlower()
 {
-    blowerPIDLoop.SetOutputLimits(0.0, 100.0);
+    blowerPIDLoop.SetOutputLimits(10.0, 100.0);
+    blowerPIDLoop.SetSampleTime(100);
     blowerPIDLoop.SetMode(AUTOMATIC);
-
     lastBlowerSpeedRecalc = micros();
     blowerPulseSum = 0;
     averageBlowerPulsePeriod = -1;
     blowerTargetSpeedPercent = 0;
     lastBlowerPulseMicroseconds = 0;
+
+    for(int idx = 0; idx < NUM_SPEED_SAMPLES; idx++ )
+    {
+        blowerSpeedSamples[idx] = 0;
+    }
 
     attachInterrupt(BLOWER_SPEED_FEEDBACK_INTERRUPT,onBlowerSpeedRisingEdge, FALLING);
     setupTimers();
@@ -66,11 +80,27 @@ void recompute_blower_control_loop(void)
         }
         blowerPulseSum = 0;
         lastBlowerSpeedRecalc = currTime;
+
+        blowerSpeedSamples[blowerSampleIndex] = blowerCurrentSpeedPercent;
+        blowerSampleIndex++;
+        if(blowerSampleIndex >= NUM_SPEED_SAMPLES)
+        {
+            blowerSampleIndex = 0;
+        }
+
+        blowerAverageSpeedPercent = 0;
+        for(int idx = 0;idx < NUM_SPEED_SAMPLES; idx++)
+        {
+            blowerAverageSpeedPercent+=blowerSpeedSamples[idx];
+        }
+        blowerAverageSpeedPercent = blowerAverageSpeedPercent/(double)NUM_SPEED_SAMPLES;
+
+
     }
 
-    if(blowerTargetSpeedPercent < blowerCurrentSpeedPercent)
+    if(blowerTargetSpeedPercent*1.2 < blowerAverageSpeedPercent)
     {
-        
+        reset_pid_integrator();
     }
 
     blowerPIDLoop.Compute();
@@ -80,7 +110,7 @@ void recompute_blower_control_loop(void)
 
 double getCurrentBlowerSpeed()
 {
-    return blowerCurrentSpeedPercent;
+    return blowerAverageSpeedPercent ;
 }
 
 //Average 8 samples, so left shift 3 places 
@@ -92,8 +122,8 @@ void onBlowerSpeedRisingEdge()
     if( currTime-lastBlowerPulseMicroseconds >= 450 )
     {
         blowerPulseSum++;
+        lastBlowerPulseMicroseconds = currTime;
     }
-    lastBlowerPulseMicroseconds = currTime;
 }
 
 void onTimerPeriodElapsed(){
@@ -120,7 +150,7 @@ void setBlowerPWMPercent(double speedPercent)
 // see data at https://docs.google.com/spreadsheets/d/1GVmF7gMihPsArEmjk8MefS8RsMpl3gKHL-qg1a0rInc/edit?usp=sharing
 double blowerPressureToBlowerSpeed(double pressure)
 {
-    return sqrt(pressure)*13.678 + pressure*0.1129 + 4.955;
+    return sqrt(pressure)*14.16199 + pressure*0.07209 + 3.6105;
 }
 
 // Output PWM 24Khz on digital pin D3  and D11 using timer TCC1 (10-bit resolution)
