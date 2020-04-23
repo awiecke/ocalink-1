@@ -5,6 +5,8 @@
 #define BLOWER_SPEED_FEEDBACK_INTERRUPT (digitalPinToInterrupt(A1))
 
 extern double blowerTargetSpeedPercent;
+extern double blowerPWMCommandPercent;
+extern unsigned long averageBlowerPulsePeriod;
 
 void initBlower();
 void recompute_blower_control_loop();

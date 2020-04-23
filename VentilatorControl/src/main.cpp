@@ -117,12 +117,12 @@ uint32_t TimeOfLastSolenoidToggleMilliseconds = 0; // Time, in terms of millis()
 // --------------------------------PID SETTINGS-------------------------------------- //
 // TODO: MEDIUM reorganize constants
 // Pressure Controlled Blower PID
-double pressure_system_input, blower_output_speed_in_percentage, pinch_valve_output_openness_in_percentage, CurrPressureSetpointCentimetersH2O;
+double pressure_system_input, blower_pressure_adjustment, pinch_valve_output_openness_in_percentage, CurrPressureSetpointCentimetersH2O;
 // double Blower_Kp = DEFAULT_KP, Blower_Ki = DEFAULT_KI, Blower_Kd = DEFAULT_KD;
-double Blower_Kp=0, Blower_Ki=0, Blower_Kd=0.008000;
+double Blower_Kp=1, Blower_Ki=.01, Blower_Kd=0.008000;
 double PinchValve_Kp = 5, PinchValve_Ki = 0, PinchValve_Kd = 1;
 PID Blower_PID(&pressure_system_input,
-                &blower_output_speed_in_percentage,
+                &blower_pressure_adjustment,
                 &CurrPressureSetpointCentimetersH2O,
                 Blower_Kp, Blower_Ki, Blower_Kd, DIRECT);
 
@@ -162,7 +162,7 @@ void pressure_sensors_init (void)
 void pid_init (void)
 {
   Blower_PID.SetMode(AUTOMATIC);  // Set PID Mode to Automatic, may change later
-  Blower_PID.SetOutputLimits(MIN_PERCENTAGE, MAX_PERCENTAGE);
+  Blower_PID.SetOutputLimits(-10, 10);
   Blower_PID.SetSampleTime(DEFAULT_PID_SAMPLE_TIME);
 
   PinchValve_PID.SetMode(AUTOMATIC);  // Set PID Mode to Automatic, may change later
@@ -328,34 +328,24 @@ void print_pid_setpoint_and_current_value(void)
 
 void reset_blower_pid_integrator(void)
 {
-  // Blower_PID.SetMode(MANUAL);
-  // blower_output_speed_in_percentage = 0;
-  // Blower_PID.SetMode(AUTOMATIC);
+   Blower_PID.SetMode(MANUAL);
+   blower_pressure_adjustment = 0;
+   Blower_PID.SetMode(AUTOMATIC);
 }
 
 void write_calculated_pid_blower_speed(void)
 {
-
-
-//   switch( CurrCycleStep)
-//   {
-//     case INHALE_RAMP:
-//     case INHALE_HOLD:
-//     case EXHALE_HOLD:
-//       // static float BlowerSpeedExhaleWeightedAverage = -1;
-//       // Set Blower_Kp, Blower_Ki, Blower_Kd and comute Pressure PID
-//       Blower_PID.SetTunings(Blower_Kp, Blower_Ki, Blower_Kd);
-//       Blower_PID.Compute();
-      
-//     break;
-//     case IDLE:
-//     case EXHALE_RAMP:
-//       reset_blower_pid_integrator();
-//       blower_output_speed_in_percentage = 0;
-//     break;
-//   }
-//       // Output PID calcuslated 0-100% to motor
-//       blower.writeMicroseconds(blower_speed);
+      if( CurrCycleStep != IDLE )
+      {
+        Blower_PID.SetTunings(Blower_Kp, Blower_Ki, Blower_Kd);
+        Blower_PID.Compute();
+      }
+      else
+      {
+        reset_blower_pid_integrator();
+      }
+      // Output PID calcuslated 0-100% to motor
+      blowerTargetSpeedPercent = blowerPressureToBlowerSpeed(CurrPressureSetpointCentimetersH2O);// + blower_pressure_adjustment);
 }
 
 // Write percent openness to the pinch valve
@@ -475,8 +465,6 @@ void cycle_state_setpoint_handler(void)
       CurrPressureSetpointCentimetersH2O = PeepPressureCentimetersH2O;
     break;
   }
-
-  blowerTargetSpeedPercent = blowerPressureToBlowerSpeed(CurrPressureSetpointCentimetersH2O);
 }
 
 void buzzer_toggle(void)
@@ -574,7 +562,7 @@ void loop()
 
   pinch_valve_control();
 
-  //write_calculated_pid_blower_speed();
+  write_calculated_pid_blower_speed();
 
   recompute_blower_control_loop();
 
