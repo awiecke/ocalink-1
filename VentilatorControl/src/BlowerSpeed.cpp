@@ -42,11 +42,18 @@ void initBlower()
     setBlowerPWMPercent(0);
 }
 
+void reset_pid_integrator(void)
+{
+   blowerPIDLoop.SetMode(MANUAL);
+   blowerPWMCommandPercent = 0;
+   blowerPIDLoop.SetMode(AUTOMATIC);
+}
+
 void recompute_blower_control_loop(void)
 {
     unsigned long currTime = micros();
     //Average pulse count over 100ms
-    if( (currTime - lastBlowerSpeedRecalc) > 100000)
+    if( (currTime - lastBlowerSpeedRecalc) > 10000)
     {
         if(blowerPulseSum > 0)
         {
@@ -59,6 +66,11 @@ void recompute_blower_control_loop(void)
         }
         blowerPulseSum = 0;
         lastBlowerSpeedRecalc = currTime;
+    }
+
+    if(blowerTargetSpeedPercent < blowerCurrentSpeedPercent)
+    {
+        
     }
 
     blowerPIDLoop.Compute();
